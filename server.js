@@ -1,69 +1,62 @@
-require('dotenv').config();
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
-const TelegramBot = require('node-telegram-bot-api');
+require("dotenv").config();
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { v4: uuidv4 } = require("uuid");
+const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ENV
+/* ========================= ENV ========================= */
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const AUTO_APPROVE_KEY = process.env.AUTO_APPROVE_KEY || "";
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL; // must be set on Render!
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 
-if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_CHAT_ID) {
-  console.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID");
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_CHAT_ID || !PUBLIC_BASE_URL) {
+  console.error("❌ Missing ENV: TELEGRAM_BOT_TOKEN / TELEGRAM_ADMIN_CHAT_ID / PUBLIC_BASE_URL");
   process.exit(1);
 }
 
-/*  
-========================================
-      TELEGRAM WEBHOOK MODE (Render)
-========================================
-*/
+/* ========================= TELEGRAM WEBHOOK ========================= */
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
-// Set webhook
+// Set Telegram webhook
 bot.setWebHook(`${PUBLIC_BASE_URL}/bot${TELEGRAM_BOT_TOKEN}`);
 
-// Route for receiving Telegram updates
+// Webhook route (Telegram sends updates here)
+app.use(express.json());
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// In-memory DB
+/* ========================= IN-MEMORY DB ========================= */
+
 const uploads = {};
 
-app.use(express.json());
+/* ========================= MULTER ========================= */
 
-// Multer upload config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = './uploads';
+    const dir = "./uploads";
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const name = `${Date.now()}-${Math.round(Math.random() * 1E9)}-${file.originalname}`;
-    cb(null, name);
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`);
   }
 });
+
 const upload = multer({ storage });
 
-/*
-========================================
-             API ROUTES
-========================================
-*/
+/* ========================= API ROUTES ========================= */
 
 // Upload receipt
-app.post('/api/upload', upload.single('receipt'), async (req, res) => {
+app.post("/api/upload", upload.single("receipt"), async (req, res) => {
   const { name, email, amount, autokey } = req.body;
 
   if (!req.file) {
@@ -80,7 +73,7 @@ app.post('/api/upload', upload.single('receipt'), async (req, res) => {
     name: name || "Unknown",
     email: email || "N/A",
     amount: amount || "149",
-    status: approved ? 'approved' : 'pending',
+    status: approved ? "approved" : "pending",
     filePath: req.file.path
   };
 
@@ -92,7 +85,7 @@ Email: ${uploads[id].email}
 Amount: ₱${uploads[id].amount}
 Status: ${approved ? "AUTO APPROVED" : "Pending Approval"}
 Upload ID: ${id}
-  `.trim();
+`.trim();
 
   const keyboard = approved
     ? null
@@ -109,18 +102,21 @@ Upload ID: ${id}
     await bot.sendPhoto(
       TELEGRAM_ADMIN_CHAT_ID,
       fs.createReadStream(req.file.path),
-      { caption, reply_markup: keyboard }
+      {
+        caption,
+        reply_markup: keyboard
+      }
     );
   } catch (err) {
-    console.error("Telegram send error:", err.message);
+    console.error("Telegram error:", err.message);
   }
 
   res.json({ success: true, id });
 });
 
-// Approve/Reject
-bot.on('callback_query', (query) => {
-  const [action, id] = query.data.split('_');
+// Approve or reject
+bot.on("callback_query", (query) => {
+  const [action, id] = query.data.split("_");
   const upload = uploads[id];
 
   if (!upload) {
@@ -128,7 +124,7 @@ bot.on('callback_query', (query) => {
     return;
   }
 
-  upload.status = action === 'approve' ? 'approved' : 'rejected';
+  upload.status = action === "approve" ? "approved" : "rejected";
 
   bot.editMessageReplyMarkup(
     { inline_keyboard: [] },
@@ -138,46 +134,40 @@ bot.on('callback_query', (query) => {
     }
   );
 
-  bot.sendMessage(query.message.chat.id, `Payment ${id} has been ${upload.status.toUpperCase()}`);
+  bot.sendMessage(
+    query.message.chat.id,
+    `Payment ${id} has been ${upload.status.toUpperCase()}`
+  );
+
   bot.answerCallbackQuery(query.id);
 });
 
 // Status check
-app.get('/api/status', (req, res) => {
+app.get("/api/status", (req, res) => {
   const id = req.query.id;
   if (!id || !uploads[id]) return res.json({});
-
-  res.json({
-    [id]: {
-      status: uploads[id].status,
-      id,
-      token: uploads[id].token
-    }
-  });
+  const u = uploads[id];
+  res.json({ [id]: { status: u.status, id, token: u.token } });
 });
 
-// Download
-app.get('/download/:id/:token', (req, res) => {
+// File download
+app.get("/download/:id/:token", (req, res) => {
   const { id, token } = req.params;
-
   const upload = uploads[id];
-  if (!upload || upload.token !== token || upload.status !== 'approved') {
-    return res.status(403).send('Access denied / not approved');
+
+  if (!upload || upload.token !== token || upload.status !== "approved") {
+    return res.status(403).send("Access denied / not approved");
   }
 
-  const filePath = path.join(__dirname, 'GCashTrackerPro-v9.0.zip');
+  const filePath = path.join(__dirname, "GCashTrackerPro-v9.0.zip");
   if (!fs.existsSync(filePath)) {
-    return res.status(404).send('File not found');
+    return res.status(404).send("File not found");
   }
 
   res.download(filePath);
 });
 
-/*
-========================================
-           FRONTEND (index.html)
-========================================
-*/
+/* ========================= FRONTEND ========================= */
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -185,13 +175,9 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-/*  
-========================================
-                START SERVER
-========================================
-*/
+/* ========================= START SERVER ========================= */
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running at: ${PUBLIC_BASE_URL}`);
-  console.log("Telegram bot webhook active.");
+  console.log("✔ Telegram Webhook Active");
 });
