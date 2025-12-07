@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buy GCash Tracker Pro v9.0</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<style>
+    :root {
+        --gcash: #0186ff;
+        --gcash-green: #00a651;
+        --bg: #eef3ff;
+        --card: #ffffff;
+        --text: #1e293b;
+    }
+
+    body {
+        font-family: "Inter", sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        animation: fadeIn 1.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    header {
+        background: linear-gradient(135deg, #4f46e5, #6d28d9, #4f46e5);
+        padding: 30px 40px;
+        text-align: center;
+        color: white;
+        background-size: 300% 300%;
+        animation: gradientMove 7s ease infinite;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    @keyframes gradientMove {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    header h1 {
+        font-size: 2.5rem;
+        font-weight: 900;
+        margin: 0;
+        animation: slideDown 1s ease;
+    }
+
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .container {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 0 20px;
+    }
+
+    .card {
+        background: var(--card);
+        padding: 35px;
+        border-radius: 22px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    }
+
+    .price-box h2 {
+        font-size: 3rem;
+        font-weight: 900;
+        color: var(--gcash-green);
+    }
+
+    .qr-img {
+        width: 260px;
+        border-radius: 20px;
+        box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+        transition: .4s;
+    }
+
+    .qr-img:hover {
+        transform: scale(1.05);
+    }
+
+    .upload-box {
+        margin-top: 35px;
+        padding: 25px;
+        border: 2px dashed #94a3b8;
+        border-radius: 16px;
+        text-align: center;
+        transition: .3s;
+    }
+
+    .upload-box:hover {
+        border-color: var(--gcash-green);
+        background: #f3fff6;
+        transform: scale(1.02);
+    }
+
+    .btn {
+        width: 100%;
+        padding: 16px;
+        margin-top: 25px;
+        background: var(--gcash-green);
+        color: white;
+        border: none;
+        border-radius: 14px;
+        font-size: 1.3rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: .25s;
+    }
+
+    .btn:disabled {
+        background: gray;
+        cursor: not-allowed;
+    }
+
+    .btn:hover:not(:disabled) {
+        background: #039b4a;
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    }
+</style>
+
+</head>
+<body>
+
+<header>
+    <h1>GCash Tracker Pro v9.0</h1>
+    <p>Secure, fast, and professional finance tracking for your GCash business.</p>
+</header>
+
+<div class="container">
+    <div class="card">
+
+        <div class="price-box">
+            <h2>₱149 Only</h2>
+            <p>One-time payment – instant download after verification</p>
+        </div>
+
+        <hr><br>
+
+        <h2><i class="fa-solid fa-wallet"></i> Pay Using GCash</h2>
+
+        <div class="qr-box" style="text-align:center;">
+            <img src="images/qr-img.jpg" class="qr-img">
+            <p style="margin-top:10px; opacity:.8;">Scan to Pay or Send to GCash Number Below</p>
+            <h3 style="font-size:1.6rem; color:var(--gcash-green); margin-top:10px;">0992-467-4726</h3>
+        </div>
+
+        <hr><br>
+
+        <h2><i class="fa-solid fa-image"></i> Upload Payment Screenshot</h2>
+
+        <div class="upload-box">
+            <p>Upload your GCash payment receipt to unlock download.</p>
+            <input type="file" id="receipt" accept="image/*">
+        </div>
+
+        <button class="btn" id="downloadBtn" disabled>
+            Download GCash Tracker Pro v9.0
+        </button>
+
+        <p style="text-align:center; opacity:.7;">Verification takes 1–5 minutes.</p>
+
+    </div>
+</div>
+
+<footer style="margin-top:50px; padding:25px; text-align:center; background:#e2e8f0;">
+    © 2025 GCash Tracker Pro — All Rights Reserved
+</footer>
+
+<script>
+/*
+    NEW UPDATED LOGIC:
+    ✔ Upload to /api/upload-payment
+    ✔ Start polling /api/status?id=xxx
+    ✔ Unlock download automatically 
+*/
+
+const receiptInput = document.getElementById('receipt');
+const downloadBtn = document.getElementById('downloadBtn');
+
+let uploadId = null;
+let checkTimer = null;
+
+// Upload receipt to backend
+async function uploadReceipt(file) {
+    const form = new FormData();
+    form.append("receipt", file);  // must match multer field
+    form.append("name", "Buyer");
+    form.append("email", "buyer@example.com");
+    form.append("amount", "149");
+    form.append("autokey", ""); // optional for instant approval
+
+    const res = await fetch("/api/upload", {
+        method: "POST",
+        body: form
+    });
+
+    return await res.json();
+}
+
+// Polling for approval
+async function checkStatus() {
+    if (!uploadId) return;
+
+    const res = await fetch("/api/status?id=" + uploadId);
+    const data = await res.json();
+    const info = data[uploadId];
+
+    if (!info) return;
+
+    if (info.status === "approved") {
+        clearInterval(checkTimer);
+        const baseUrl = window.location.origin;
+        const downloadUrl = `${baseUrl}/download/${info.id}/${info.token}`;
+        downloadBtn.disabled = false;
+        downloadBtn.dataset.url = downloadUrl;
+        downloadBtn.innerText = "Download — Approved!";
+        alert("Payment approved! Click Download.");
+    }
+
+    if (info.status === "rejected") {
+        clearInterval(checkTimer);
+        alert("Payment rejected. Please contact support.");
+        downloadBtn.innerText = "Rejected";
+    }
+}
+
+
+receiptInput.addEventListener("change", async () => {
+    const file = receiptInput.files[0];
+    if (!file) return;
+
+    downloadBtn.disabled = true;
+    downloadBtn.innerText = "Uploading...";
+
+    const result = await uploadReceipt(file);
+
+    if (!result.success) {
+        alert("Upload Failed: " + result.message);
+        return;
+    }
+
+    uploadId = result.id;
+    downloadBtn.innerText = "Pending verification...";
+
+    // Start polling every 4 seconds
+    checkTimer = setInterval(checkStatus, 4000);
+});
+
+// Download button
+downloadBtn.addEventListener("click", () => {
+    const url = downloadBtn.dataset.url;
+    if (!url) return alert("Not approved yet.");
+
+    window.location.href = url;
+});
+
+</script>
+
+</body>
+</html>
