@@ -29,6 +29,7 @@ bot.setWebHook(`${PUBLIC_BASE_URL}/bot${TELEGRAM_BOT_TOKEN}`);
 
 // Webhook route (Telegram sends updates here)
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); 
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
@@ -181,3 +182,4 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running at: ${PUBLIC_BASE_URL}`);
   console.log("✔ Telegram Webhook Active");
 });
+
