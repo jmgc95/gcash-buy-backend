@@ -9,22 +9,40 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ENV
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const AUTO_APPROVE_KEY = process.env.AUTO_APPROVE_KEY || "";
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL; // must be set on Render!
 
 if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_CHAT_ID) {
-  console.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID in .env");
+  console.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID");
   process.exit(1);
 }
 
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true }); // we don't need polling
+/*  
+========================================
+      TELEGRAM WEBHOOK MODE (Render)
+========================================
+*/
 
-// In-memory store
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
+
+// Set webhook
+bot.setWebHook(`${PUBLIC_BASE_URL}/bot${TELEGRAM_BOT_TOKEN}`);
+
+// Route for receiving Telegram updates
+app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// In-memory DB
 const uploads = {};
 
-// Multer setup
+app.use(express.json());
+
+// Multer upload config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = './uploads';
@@ -32,17 +50,19 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}-${file.originalname}`;
-    cb(null, uniqueName);
+    const name = `${Date.now()}-${Math.round(Math.random() * 1E9)}-${file.originalname}`;
+    cb(null, name);
   }
 });
 const upload = multer({ storage });
 
-// Serve static files
-app.use(express.static('.'));
-app.use(express.json());
+/*
+========================================
+             API ROUTES
+========================================
+*/
 
-// Upload endpoint
+// Upload receipt
 app.post('/api/upload', upload.single('receipt'), async (req, res) => {
   const { name, email, amount, autokey } = req.body;
 
@@ -52,82 +72,64 @@ app.post('/api/upload', upload.single('receipt'), async (req, res) => {
 
   const id = uuidv4();
   const token = uuidv4();
-  const isAutoApproved = autokey === AUTO_APPROVE_KEY;
+  const approved = autokey === AUTO_APPROVE_KEY;
 
   uploads[id] = {
     id,
     token,
     name: name || "Unknown",
-    email: email || "No email",
+    email: email || "N/A",
     amount: amount || "149",
-    status: isAutoApproved ? 'approved' : 'pending',
-    filePath: req.file.path,
-    timestamp: Date.now()
+    status: approved ? 'approved' : 'pending',
+    filePath: req.file.path
   };
 
-  const filePath = req.file.path;
-
-  try {
-    // Prepare caption
-    const caption = `
+  const caption = `
 New Payment Receipt
 
-Name: ${name || "Unknown"}
-Email: ${email || "N/A"}
-Amount: ₱${amount || "149"}
-Status: ${isAutoApproved ? "AUTO APPROVED" : "Pending Approval"}
+Name: ${uploads[id].name}
+Email: ${uploads[id].email}
+Amount: ₱${uploads[id].amount}
+Status: ${approved ? "AUTO APPROVED" : "Pending Approval"}
 Upload ID: ${id}
-    `.trim();
+  `.trim();
 
-    // Inline approve/reject buttons
-    const keyboard = isAutoApproved ? null : {
-      inline_keyboard: [
-        [
-          { text: "Approve", callback_data: `approve_${id}` },
-          { text: "Reject", callback_data: `reject_${id}` }
+  const keyboard = approved
+    ? null
+    : {
+        inline_keyboard: [
+          [
+            { text: "Approve", callback_data: `approve_${id}` },
+            { text: "Reject", callback_data: `reject_${id}` }
+          ]
         ]
-      ]
-    };
+      };
 
-    // Send photo with caption + buttons
-    await bot.sendPhoto(TELEGRAM_ADMIN_CHAT_ID, fs.createReadStream(filePath), {
-      caption,
-      parse_mode: "HTML",
-      reply_markup: keyboard
-    });
-
-    console.log(`Receipt sent to Telegram (ID: ${id})`);
+  try {
+    await bot.sendPhoto(
+      TELEGRAM_ADMIN_CHAT_ID,
+      fs.createReadStream(req.file.path),
+      { caption, reply_markup: keyboard }
+    );
   } catch (err) {
-    console.error("Failed to send to Telegram:", err.message);
-    // Don't fail upload just because Telegram failed
+    console.error("Telegram send error:", err.message);
   }
 
   res.json({ success: true, id });
 });
 
-// Handle button clicks from Telegram
+// Approve/Reject
 bot.on('callback_query', (query) => {
-  const data = query.data;
-  const chatId = query.message.chat.id;
+  const [action, id] = query.data.split('_');
+  const upload = uploads[id];
 
-  if (!data) return;
-
-  const [action, id] = data.split('_');
-
-  if (!uploads[id]) {
-    bot.answerCallbackQuery(query.id, { text: "Invalid or expired ID" });
+  if (!upload) {
+    bot.answerCallbackQuery(query.id, { text: "Invalid ID" });
     return;
   }
 
-  if (action === 'approve') {
-    uploads[id].status = 'approved';
-    bot.sendMessage(chatId, `Payment ${id} has been APPROVED`);
-  } else if (action === 'reject') {
-    uploads[id].status = 'rejected';
-    bot.sendMessage(chatId, `Payment ${id} has been REJECTED`);
-  }
+  upload.status = action === 'approve' ? 'approved' : 'rejected';
 
-  // 🔥 REMOVE buttons after clicking
   bot.editMessageReplyMarkup(
     { inline_keyboard: [] },
     {
@@ -136,42 +138,60 @@ bot.on('callback_query', (query) => {
     }
   );
 
+  bot.sendMessage(query.message.chat.id, `Payment ${id} has been ${upload.status.toUpperCase()}`);
   bot.answerCallbackQuery(query.id);
 });
 
 // Status check
 app.get('/api/status', (req, res) => {
-  const { id } = req.query;
+  const id = req.query.id;
   if (!id || !uploads[id]) return res.json({});
 
-  const u = uploads[id];
   res.json({
     [id]: {
-      status: u.status,
-      id: u.id,
-      token: u.token
+      status: uploads[id].status,
+      id,
+      token: uploads[id].token
     }
   });
 });
 
-// Download route
+// Download
 app.get('/download/:id/:token', (req, res) => {
   const { id, token } = req.params;
+
   const upload = uploads[id];
-
   if (!upload || upload.token !== token || upload.status !== 'approved') {
-    return res.status(403).send('Access denied or not approved');
+    return res.status(403).send('Access denied / not approved');
   }
 
-  const file = path.join(__dirname, 'GCashTrackerPro-v9.0.zip');
-  if (!fs.existsSync(file)) {
-    return res.status(404).send('File not found on server');
+  const filePath = path.join(__dirname, 'GCashTrackerPro-v9.0.zip');
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('File not found');
   }
 
-  res.download(file, 'GCashTrackerPro-v9.0.zip');
+  res.download(filePath);
 });
 
+/*
+========================================
+           FRONTEND (index.html)
+========================================
+*/
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+/*  
+========================================
+                START SERVER
+========================================
+*/
+
 app.listen(PORT, () => {
-  console.log(`Server running on ${PUBLIC_BASE_URL}`);
-  console.log(`Admin will receive receipts in Telegram!`);
+  console.log(`🚀 Server running at: ${PUBLIC_BASE_URL}`);
+  console.log("Telegram bot webhook active.");
 });
