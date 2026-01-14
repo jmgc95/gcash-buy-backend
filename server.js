@@ -160,7 +160,7 @@ app.get("/download/:id/:token", (req, res) => {
     return res.status(403).send("Access denied / not approved");
   }
 
-  const filePath = path.join(__dirname, "GCashTrackerPro-v9.0.zip");
+  const filePath = path.join(__dirname, "app-release.apk");
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
   }
@@ -182,4 +182,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running at: ${PUBLIC_BASE_URL}`);
   console.log("✔ Telegram Webhook Active");
 });
+
 
