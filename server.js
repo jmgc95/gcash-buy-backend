@@ -160,7 +160,7 @@ app.get("/download/:id/:token", (req, res) => {
     return res.status(403).send("Access denied / not approved");
   }
 
-  const filePath = path.join(__dirname, "app-release.apk");
+  const filePath = path.join(__dirname, "GTracker-1.0-release.apk");
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
   }
@@ -182,5 +182,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running at: ${PUBLIC_BASE_URL}`);
   console.log("✔ Telegram Webhook Active");
 });
+
 
 
